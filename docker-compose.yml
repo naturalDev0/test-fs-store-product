@@ -1,0 +1,24 @@
+# Local PostgreSQL for development and tests.
+#   docker compose up -d
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: store
+    ports:
+      - "5432:5432"
+    volumes:
+      # Creates the test database alongside `store` on first start.
+      - ./db-init:/docker-entrypoint-initdb.d:ro
+      # PostgreSQL 18 images keep data under /var/lib/postgresql.
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d store"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  pgdata:
