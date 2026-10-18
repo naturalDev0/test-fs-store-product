@@ -9,7 +9,7 @@ import { signToken, type Role } from '../src/auth/tokens.js';
 const FIXED_HASH = '$2b$04$abcdefghijklmnopqrstuuK8V6Qx3XyQ6m9K3m0o6fB4oZ5h5Qa1e';
 
 export async function resetDb() {
-  await pool.query('TRUNCATE orders, products, users RESTART IDENTITY CASCADE');
+  await pool.query('TRUNCATE stock_movements, orders, products, users RESTART IDENTITY CASCADE');
 }
 
 export async function createUser(role: Role = 'customer') {
@@ -22,12 +22,28 @@ export async function createUser(role: Role = 'customer') {
   return { id, email, token: signToken(id, role) };
 }
 
+/** Inserts a product with its opening-balance ledger movement, as the API would. */
 export async function createProduct(stock: number, priceCents = 1000) {
   const { rows } = await pool.query<{ id: number }>(
-    `INSERT INTO products (sku, name, price_cents, stock) VALUES ($1, 'Test product', $2, $3) RETURNING id`,
+    `WITH p AS (
+       INSERT INTO products (sku, name, price_cents, stock) VALUES ($1, 'Test product', $2, $3) RETURNING id, stock
+     ), m AS (
+       INSERT INTO stock_movements (product_id, delta, reason, stock_after)
+       SELECT id, stock, 'opening_balance', stock FROM p WHERE stock > 0
+     )
+     SELECT id FROM p`,
     [`SKU-${crypto.randomUUID()}`, priceCents, stock],
   );
   return rows[0].id;
+}
+
+/** Products whose stock doesn't equal the sum of their ledger movements. */
+export async function ledgerMismatches(): Promise<number[]> {
+  const { rows } = await pool.query<{ id: number }>(
+    `SELECT p.id FROM products p LEFT JOIN stock_movements m ON m.product_id = p.id
+      GROUP BY p.id HAVING p.stock <> COALESCE(SUM(m.delta), 0)`,
+  );
+  return rows.map((r) => r.id);
 }
 
 export async function stockOf(productId: number): Promise<number> {

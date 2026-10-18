@@ -1,6 +1,6 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { pool } from '../src/db.js';
-import { createProduct, createUser, resetDb, startServer, stockOf, unitsSold } from './helpers.js';
+import { createProduct, createUser, ledgerMismatches, resetDb, startServer, stockOf, unitsSold } from './helpers.js';
 
 /**
  * These tests fire many purchases at the SAME product at the same moment,
@@ -22,6 +22,12 @@ const statusCounts = (results: { status: number }[]) =>
   results.reduce<Record<number, number>>((acc, r) => ((acc[r.status] = (acc[r.status] ?? 0) + 1), acc), {});
 
 describe('POST /api/orders under concurrency', () => {
+  // Whatever each test did, the inventory ledger must still balance:
+  // every product's stock equals the sum of its recorded movements.
+  afterEach(async () => {
+    expect(await ledgerMismatches()).toEqual([]);
+  });
+
   it('sells exactly the available stock when 100 buyers race for 10 units', async () => {
     const productId = await createProduct(10);
     const buyers = await Promise.all(Array.from({ length: 100 }, () => createUser()));
@@ -68,6 +74,21 @@ describe('POST /api/orders under concurrency', () => {
     expect((await stockOf(productId)) + sold).toBe(5 + 20);
     expect(await unitsSold(productId)).toBe(sold);
     expect(sold).toBeLessThanOrEqual(25);
+
+    // The ledger tells the same story, movement by movement: each one's
+    // stock_after equals the previous stock_after plus its delta. A gap would
+    // mean two writers interleaved without the row lock serialising them.
+    const { rows } = await pool.query<{ delta: number; stock_after: number; reason: string }>(
+      'SELECT delta, stock_after, reason FROM stock_movements WHERE product_id = $1 ORDER BY id',
+      [productId],
+    );
+    let running = 0;
+    for (const m of rows) {
+      running += m.delta;
+      expect(m.stock_after).toBe(running);
+    }
+    expect(rows.filter((m) => m.reason === 'purchase')).toHaveLength(sold);
+    expect(rows.filter((m) => m.reason === 'restock')).toHaveLength(10);
   });
 
   it('creates exactly one order when the same request is retried concurrently (idempotency)', async () => {

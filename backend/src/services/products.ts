@@ -1,5 +1,6 @@
-import { pool } from '../db.js';
-import { HttpError, PG, pgCode, notFound } from '../errors.js';
+import { pool, withTransaction } from '../db.js';
+import { HttpError, PG, pgCode, pgConstraint, notFound } from '../errors.js';
+import { recordMovement } from './ledger.js';
 
 export interface Product {
   id: number;
@@ -42,15 +43,27 @@ export interface NewProduct {
   stock: number;
 }
 
-export async function createProduct(input: NewProduct): Promise<Product> {
+export async function createProduct(input: NewProduct, actorUserId: number): Promise<Product> {
   try {
-    const { rows } = await pool.query<Product>(
-      `INSERT INTO products (sku, name, description, price_cents, stock)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING ${COLUMNS}`,
-      [input.sku, input.name, input.description, input.priceCents, input.stock],
-    );
-    return rows[0];
+    return await withTransaction(async (client) => {
+      const { rows } = await client.query<Product>(
+        `INSERT INTO products (sku, name, description, price_cents, stock)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING ${COLUMNS}`,
+        [input.sku, input.name, input.description, input.priceCents, input.stock],
+      );
+      const product = rows[0];
+      if (product.stock > 0) {
+        await recordMovement(client, {
+          productId: product.id,
+          delta: product.stock,
+          reason: 'opening_balance',
+          stockAfter: product.stock,
+          actorUserId,
+        });
+      }
+      return product;
+    });
   } catch (err) {
     if (pgCode(err) === PG.UNIQUE_VIOLATION) {
       throw new HttpError(409, 'DUPLICATE_SKU', `SKU "${input.sku}" already exists`);
@@ -101,24 +114,36 @@ export async function updateProduct(id: number, expectedVersion: number, edit: P
 }
 
 /**
- * Atomically adds (restock) or removes (write-off) stock.
+ * Atomically adds (restock) or removes (write-off) stock, and records the
+ * movement in the ledger in the same transaction.
  *
  * `stock = stock + delta` is evaluated by the database against the current
  * row, so it composes safely with concurrent purchases. A delta that would
  * take stock below zero violates the CHECK constraint and is rejected.
  */
-export async function adjustStock(id: number, delta: number): Promise<Product> {
+export async function adjustStock(id: number, delta: number, actorUserId: number, note = ''): Promise<Product> {
   try {
-    const { rows } = await pool.query<Product>(
-      `UPDATE products SET stock = stock + $2, updated_at = now()
-        WHERE id = $1
-        RETURNING ${COLUMNS}`,
-      [id, delta],
-    );
-    if (!rows[0]) throw notFound('Product');
-    return rows[0];
+    return await withTransaction(async (client) => {
+      const { rows } = await client.query<Product>(
+        `UPDATE products SET stock = stock + $2, updated_at = now()
+          WHERE id = $1
+          RETURNING ${COLUMNS}`,
+        [id, delta],
+      );
+      const product = rows[0];
+      if (!product) throw notFound('Product');
+      await recordMovement(client, {
+        productId: id,
+        delta,
+        reason: delta > 0 ? 'restock' : 'write_off',
+        stockAfter: product.stock,
+        actorUserId,
+        note,
+      });
+      return product;
+    });
   } catch (err) {
-    if (pgCode(err) === PG.CHECK_VIOLATION) {
+    if (pgCode(err) === PG.CHECK_VIOLATION && pgConstraint(err) === 'products_stock_check') {
       throw new HttpError(409, 'INSUFFICIENT_STOCK', 'Adjustment would make stock negative');
     }
     throw err;

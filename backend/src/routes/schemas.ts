@@ -35,6 +35,8 @@ export const stockAdjustment = z.object({
     .min(-MAX_STOCK)
     .max(MAX_STOCK)
     .refine((d) => d !== 0, 'delta must not be zero'),
+  /** Why the stock changed, e.g. "Supplier delivery" or "Damaged in storage". */
+  note: z.string().trim().max(500).default(''),
 });
 
 export const purchase = z.object({

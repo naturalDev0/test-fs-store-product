@@ -36,10 +36,17 @@ async function seed() {
   }
 
   for (const p of products) {
+    // Only a newly inserted product gets an opening-balance movement, so
+    // re-running the seed never double-counts stock in the ledger.
     await pool.query(
-      `INSERT INTO products (sku, name, description, price_cents, stock)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (sku) DO NOTHING`,
+      `WITH inserted AS (
+         INSERT INTO products (sku, name, description, price_cents, stock)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (sku) DO NOTHING
+         RETURNING id, stock
+       )
+       INSERT INTO stock_movements (product_id, delta, reason, stock_after, note)
+       SELECT id, stock, 'opening_balance', stock, 'Seed data' FROM inserted WHERE stock > 0`,
       [p.sku, p.name, p.description, p.priceCents, p.stock],
     );
   }

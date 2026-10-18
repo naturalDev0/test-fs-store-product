@@ -1,5 +1,6 @@
 import { pool, withTransaction } from '../db.js';
 import { HttpError, PG, pgCode, pgConstraint } from '../errors.js';
+import { recordMovement } from './ledger.js';
 
 export interface Order {
   id: number;
@@ -72,11 +73,11 @@ export async function purchase(
 
   try {
     const order = await withTransaction(async (client) => {
-      const decremented = await client.query<{ price_cents: number; name: string }>(
+      const decremented = await client.query<{ price_cents: number; name: string; stock: number }>(
         `UPDATE products
             SET stock = stock - $2, updated_at = now()
           WHERE id = $1 AND is_active AND stock >= $2
-          RETURNING price_cents, name`,
+          RETURNING price_cents, name, stock`,
         [productId, quantity],
       );
 
@@ -97,7 +98,7 @@ export async function purchase(
         });
       }
 
-      const { price_cents: unitPrice, name } = decremented.rows[0];
+      const { price_cents: unitPrice, name, stock: stockAfter } = decremented.rows[0];
       const inserted = await client.query<{ id: number; created_at: string; status: string }>(
         `INSERT INTO orders (user_id, product_id, quantity, unit_price_cents, total_cents, idempotency_key)
          VALUES ($1, $2, $3, $4, $5, $6)
@@ -106,6 +107,14 @@ export async function purchase(
       );
 
       const row = inserted.rows[0];
+      await recordMovement(client, {
+        productId,
+        delta: -quantity,
+        reason: 'purchase',
+        stockAfter,
+        orderId: row.id,
+        actorUserId: userId,
+      });
       return {
         id: row.id,
         userId,
