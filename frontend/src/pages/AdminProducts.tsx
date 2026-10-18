@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { api, ApiError, formatPrice, parsePriceToCents, type Product, type Reconciliation, type StockMovement } from '../api'
+import { api, ApiError, formatPrice, parsePriceToCents, storeCurrency, type Product, type Reconciliation, type StockMovement } from '../api'
 
 type Flash = { kind: 'success' | 'error'; text: string } | null
 
@@ -203,7 +203,7 @@ function CreateForm({ onCreate }: { onCreate: (p: { sku: string; name: string; d
         <input required maxLength={64} value={form.sku} onChange={set('sku')} />
       </label>
       <label>
-        Price (USD)
+        Price ({storeCurrency()})
         <input required inputMode="decimal" placeholder="19.99" value={form.price} onChange={set('price')} />
       </label>
       <label>

@@ -31,6 +31,7 @@ npm run dev          # app on http://localhost:5173
 
 - **Windows (Git Bash):** if `docker compose` isn't recognised, use `docker-compose up -d`.
 - **Not using Docker?** Create the `store` and `store_test` databases in your own PostgreSQL and update the URLs in `backend/.env`.
+- **Currency and locale:** two independent settings in `backend/.env`. `STORE_CURRENCY` (`SGD` by default, or `USD`) is the money prices are charged in, and decides the symbol (`S$`, `US$`). `STORE_LOCALE` (`en-SG` by default) is the language and number format. Restart the backend after changing them. Each order keeps the currency it was placed in.
 - **Already ran an earlier version?** Run `npm run db:migrate` in `backend`. It upgrades the database in place and keeps existing orders.
 
 ### Demo accounts
@@ -49,7 +50,7 @@ cd backend
 npm test
 ```
 
-34 tests run against a real PostgreSQL database (`store_test`, which the suite wipes and rebuilds through the migrations). They cover authentication, role checks, admin CRUD, optimistic locking, idempotency, the inventory ledger, and the concurrency scenarios in [ARCHITECTURE.md §2.7](ARCHITECTURE.md#27-how-its-proven). These include two control experiments: a naive implementation that does oversell, and a lock order that does deadlock.
+35 tests run against a real PostgreSQL database (`store_test`, which the suite wipes and rebuilds through the migrations). They cover authentication, role checks, admin CRUD, optimistic locking, idempotency, the inventory ledger, and the concurrency scenarios in [ARCHITECTURE.md §2.7](ARCHITECTURE.md#27-how-its-proven). These include two control experiments: a naive implementation that does oversell, and a lock order that does deadlock.
 
 ## Project layout
 

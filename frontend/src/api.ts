@@ -31,8 +31,15 @@ export interface Order {
   userEmail: string
   status: string
   totalCents: number
+  /** The currency the order was placed in, which may differ from today's store currency. */
+  currency: string
   createdAt: string
   items: OrderItem[]
+}
+
+export interface StoreConfig {
+  currency: string
+  locale: string
 }
 
 export interface CartLine {
@@ -99,6 +106,8 @@ async function request<T>(method: string, path: string, body?: unknown, headers:
 }
 
 export const api = {
+  config: () => request<StoreConfig>('GET', '/config'),
+
   login: (email: string, password: string) =>
     request<{ token: string; user: User }>('POST', '/auth/login', { email, password }),
   register: (email: string, password: string) =>
@@ -127,8 +136,46 @@ export const api = {
   },
 }
 
-export const formatPrice = (cents: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100)
+// Loaded from the API once, before the app renders (see main.tsx).
+let store: StoreConfig | undefined
+
+export async function loadStoreConfig() {
+  store = await api.config()
+}
+
+/** The currency product prices are in. */
+export const storeCurrency = () => store!.currency
+
+// The currency decides the symbol; the locale only decides language and
+// number format. Intl lets the locale pick the symbol ("$" means SGD in en-SG
+// but USD in en-US), so each currency gets one fixed, unambiguous symbol.
+const CURRENCY_SYMBOLS: Record<string, string> = { SGD: 'S$', USD: 'US$' }
+
+/**
+ * Formats an amount in cents, e.g. "S$12.99". Product prices use the store
+ * currency; an order passes its own, because it keeps the currency it was
+ * placed in. Unknown currencies fall back to their ISO code ("EUR 12.99").
+ */
+export function formatPrice(cents: number, currency = storeCurrency()) {
+  const symbol = CURRENCY_SYMBOLS[currency]
+  // "narrowSymbol" lays the amount out the way the locale places a symbol
+  // ("$12.99" in English); we then swap in our own symbol.
+  return new Intl.NumberFormat(store!.locale, {
+    style: 'currency',
+    currency,
+    currencyDisplay: symbol ? 'narrowSymbol' : 'code',
+  })
+    .formatToParts(cents / 100)
+    .map((p) => (p.type === 'currency' && symbol ? symbol : p.value))
+    .join('')
+}
+
+/** Sums order totals per currency, e.g. "S$120.00 + US$46.80". Different currencies are never added together. */
+export function formatTotals(orders: Order[]) {
+  const totals = new Map<string, number>()
+  for (const o of orders) totals.set(o.currency, (totals.get(o.currency) ?? 0) + o.totalCents)
+  return [...totals].map(([currency, cents]) => formatPrice(cents, currency)).join(' + ')
+}
 
 /** Parses "12.99" into 1299 cents without floating-point drift. */
 export function parsePriceToCents(input: string): number | null {

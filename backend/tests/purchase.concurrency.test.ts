@@ -170,7 +170,7 @@ describe('control experiments', () => {
         await new Promise((r) => setTimeout(r, 5));
         await client.query('UPDATE products SET stock = $2 WHERE id = $1', [productId, rows[0].stock - 1]);
         const order = await client.query<{ id: number }>(
-          'INSERT INTO orders (user_id, total_cents) VALUES ($1, $2) RETURNING id',
+          "INSERT INTO orders (user_id, total_cents, currency) VALUES ($1, $2, 'SGD') RETURNING id",
           [userId, rows[0].price_cents],
         );
         await client.query(

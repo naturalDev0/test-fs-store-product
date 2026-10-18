@@ -1,10 +1,16 @@
 import { Router } from 'express';
+import { config } from '../config.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { listProducts, getProduct } from '../services/products.js';
 import { findOrders, purchase } from '../services/purchase.js';
 import * as schema from './schemas.js';
 
 export const storefrontRouter = Router();
+
+/** Public store settings the frontend needs to display prices. */
+storefrontRouter.get('/config', (_req, res) => {
+  res.json(config.store);
+});
 
 /** Public catalogue: active products only, no internal fields. */
 storefrontRouter.get('/products', async (_req, res) => {

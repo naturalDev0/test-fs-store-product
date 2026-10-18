@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, formatPrice, type Order } from '../api'
+import { api, formatTotals, type Order } from '../api'
 import OrdersTable from '../components/OrdersTable'
 
 export default function AdminOrders() {
@@ -16,13 +16,12 @@ export default function AdminOrders() {
   if (error) return <p className="notice error">{error}</p>
   if (!orders) return <p className="muted">Loading…</p>
 
-  const revenue = orders.reduce((sum, o) => sum + o.totalCents, 0)
   return (
     <section>
       <div className="page-head">
         <h1>Orders</h1>
         <p className="muted">
-          {orders.length} most recent orders · {formatPrice(revenue)} revenue
+          {orders.length} most recent orders · {formatTotals(orders)} revenue
         </p>
       </div>
       <OrdersTable orders={orders} showCustomer />

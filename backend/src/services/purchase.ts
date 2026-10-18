@@ -1,4 +1,5 @@
 import type pg from 'pg';
+import { config } from '../config.js';
 import { pool, withTransaction } from '../db.js';
 import { HttpError, PG, pgCode, pgConstraint } from '../errors.js';
 import { recordMovement } from './ledger.js';
@@ -22,6 +23,8 @@ export interface Order {
   userEmail: string;
   status: string;
   totalCents: number;
+  /** ISO 4217 code, recorded when the order was placed. */
+  currency: string;
   createdAt: string;
   items: OrderItem[];
 }
@@ -98,8 +101,8 @@ export async function purchase(userId: number, cart: CartLine[], idempotencyKey?
 
       const total = taken.reduce((sum, t) => sum + t.unitPrice * t.line.quantity, 0);
       const order = await client.query<{ id: number }>(
-        `INSERT INTO orders (user_id, total_cents, idempotency_key) VALUES ($1, $2, $3) RETURNING id`,
-        [userId, total, idempotencyKey ?? null],
+        `INSERT INTO orders (user_id, total_cents, currency, idempotency_key) VALUES ($1, $2, $3, $4) RETURNING id`,
+        [userId, total, config.store.currency, idempotencyKey ?? null],
       );
       const orderId = order.rows[0].id;
 
@@ -216,7 +219,7 @@ export async function findOrders(
 
   const { rows } = await db.query<Order>(
     `SELECT o.id, o.user_id AS "userId", u.email AS "userEmail", o.status,
-            o.total_cents AS "totalCents", o.created_at AS "createdAt",
+            o.total_cents AS "totalCents", o.currency, o.created_at AS "createdAt",
             json_agg(json_build_object(
               'productId', i.product_id,
               'productName', p.name,

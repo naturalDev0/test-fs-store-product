@@ -28,14 +28,14 @@ export default function OrdersTable({ orders, showCustomer = false }: { orders: 
                         {i.quantity} × {i.productName}
                       </span>
                       <span className="muted small">
-                        {formatPrice(i.unitPriceCents)} each · {formatPrice(i.lineTotalCents)}
+                        {formatPrice(i.unitPriceCents, o.currency)} each · {formatPrice(i.lineTotalCents, o.currency)}
                       </span>
                     </li>
                   ))}
                 </ul>
               </td>
               <td className="num">
-                <strong>{formatPrice(o.totalCents)}</strong>
+                <strong>{formatPrice(o.totalCents, o.currency)}</strong>
               </td>
             </tr>
           ))}

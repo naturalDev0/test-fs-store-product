@@ -44,6 +44,7 @@ erDiagram
     bigint id PK
     bigint user_id FK
     bigint total_cents "= sum of items (trigger)"
+    char currency "ISO 4217, e.g. SGD"
     text idempotency_key "UNIQUE per user"
   }
   order_items {
@@ -70,6 +71,7 @@ erDiagram
 | `CHECK (stock >= 0)` on `products` | A last line of defence. Even if a future code change introduced a bug, the database rejects any write that would make stock negative. |
 | Money stored as integer cents; order totals as `BIGINT` | Integers avoid floating-point rounding errors (`0.1 + 0.2 != 0.3`). Totals are 64-bit because a 32-bit integer tops out at about $21 million in cents, which a large cart could exceed. A test buys $100 million to prove it. |
 | `order_items.unit_price_cents` snapshot | An admin changing a price later never rewrites what a customer actually paid. |
+| `orders.currency`, no default | An amount without its currency is ambiguous. The store currency is a setting (`STORE_CURRENCY`, default `SGD`), so each order records the currency it was placed in; changing the setting later never relabels past orders. Checkout must state it explicitly. |
 | `PRIMARY KEY (order_id, product_id)` on `order_items` | One line per product per order. The API rejects a cart that lists a product twice. |
 | Deferred constraint trigger: order total = sum of its items | A `CHECK` can't look across two tables, so a trigger does it. It is **deferred to commit time** because the order and its items are inserted by separate statements; the check runs once they all exist, and a mismatch (or an order with no items) rejects the whole transaction. |
 | `UNIQUE (user_id, idempotency_key)` | Guarantees one order per checkout attempt, even when a retry races the original request. |
@@ -218,6 +220,7 @@ Schema changes are numbered SQL files in [`backend/db/migrations`](backend/db/mi
 | `001_initial_schema` | Users, products, single-product orders |
 | `002_stock_ledger` | Adds the ledger and backfills each product's current stock as an opening balance, so existing databases reconcile from day one |
 | `003_multi_item_orders` | Adds `order_items`, **converts every existing order into a one-line order**, moves totals to `BIGINT`, and adds the order-total trigger |
+| `004_order_currency` | Adds `orders.currency`. Existing orders were priced and shown in USD, so they are backfilled as `USD` |
 
 - Each migration runs in its own transaction, together with the row that records it in `schema_migrations`, so it is either fully applied and recorded or not applied at all.
 - A PostgreSQL advisory lock stops two deployments that start at the same moment from running the same migration twice.
@@ -231,9 +234,10 @@ Schema changes are numbered SQL files in [`backend/db/migrations`](backend/db/mi
 | POST | `/api/auth/register` | public | Always creates a `customer` |
 | POST | `/api/auth/login` | public | Returns a JWT; rate-limited |
 | GET | `/api/auth/me` | signed in | |
+| GET | `/api/config` | public | `{ currency, locale }`: the store currency that product prices are in, and how to display amounts |
 | GET | `/api/products` | public | Active products only |
 | GET | `/api/products/:id` | public | |
-| POST | `/api/orders` | customer | Body `{ items: [{ productId, quantity }] }`, 1–20 distinct products, quantity 1–100; optional `Idempotency-Key` header. `201` created, `200` replayed, `409 INSUFFICIENT_STOCK` / `PRODUCT_UNAVAILABLE` (nothing bought), `422` key reused for a different cart |
+| POST | `/api/orders` | customer | Body `{ items: [{ productId, quantity }] }`, 1–20 distinct products, quantity 1–100; optional `Idempotency-Key` header. `201` created, `200` replayed, `409 INSUFFICIENT_STOCK` / `PRODUCT_UNAVAILABLE` (nothing bought), `422` key reused for a different cart. Orders include their `currency` |
 | GET | `/api/orders/mine` | signed in | Orders with line items |
 | GET | `/api/admin/products` | admin | Includes inactive products |
 | GET | `/api/admin/products/:id` | admin | |
@@ -270,7 +274,8 @@ Errors share one shape: `{ "error": { "code": "INSUFFICIENT_STOCK", "message": "
 | **Deferred trigger for order totals** | The database refuses an order whose total doesn't match its items, however it was written. | Triggers are less visible than application code, so it is commented and covered by a test. |
 | **JWT in `localStorage`** | Simple, stateless. | Readable by any script on the page if an XSS bug slipped in. Production should use an `httpOnly`, `SameSite` cookie plus CSRF protection, and support token revocation. |
 | **Synchronous checkout** | Immediate, simple answer for the customer. | A very hot product serialises on one row lock. At flash-sale scale I'd consider a queue or splitting stock into several rows ("buckets"). |
-| **Hard-coded USD, no payments** | Payments weren't in the brief. | A real checkout would reserve stock with an expiry, take payment, confirm the order from the payment provider's webhook, and release the reservation (as a ledger movement) if payment fails. |
+| **One store currency** (`SGD` by default, `USD` supported), recorded on each order | Simple and correct: every price in the catalogue is in one currency, and every order says which currency it was paid in. The frontend sums totals per currency and never adds SGD to USD. The currency decides the symbol (`S$`, `US$`) and `STORE_LOCALE` only the language and number format, because the browser's own symbols depend on the locale (`$` means SGD in `en-SG` but USD in `en-US`). | Only 2-decimal currencies, since amounts are integer cents. Product prices carry no currency of their own, so switching the store currency means repricing the catalogue. Selling in several currencies at once would need a price per currency (not exchange-rate conversion at checkout). |
+| **No payments** | Payments weren't in the brief. | A real checkout would reserve stock with an expiry, take payment, confirm the order from the payment provider's webhook, and release the reservation (as a ledger movement) if payment fails. |
 
 ## 8. What I'd add next
 

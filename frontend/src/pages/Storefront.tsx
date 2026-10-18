@@ -90,7 +90,7 @@ export default function Storefront() {
       setCart([])
       setFlash({
         kind: 'success',
-        text: `Order #${order.id} placed for ${formatPrice(order.totalCents)}.`,
+        text: `Order #${order.id} placed for ${formatPrice(order.totalCents, order.currency)}.`,
         lines: order.items.map((i) => `${i.quantity} × ${i.productName}`),
       })
     } catch (e) {

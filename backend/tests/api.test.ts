@@ -207,6 +207,22 @@ describe('purchasing', () => {
     expect(unknown.body.error).toMatchObject({ code: 'PRODUCT_UNAVAILABLE', details: { productIds: [999_999] } });
   });
 
+  it('records the store currency on each order, and keeps it if the setting changes', async () => {
+    const buyer = await createUser();
+    const productId = await createProduct(5);
+
+    expect((await api.call('GET', '/config')).body).toEqual({ currency: 'SGD', locale: 'en-SG' });
+    const res = await buy(buyer.token, [{ productId, quantity: 1 }]);
+    expect(res.body.order.currency).toBe('SGD');
+
+    // Simulate an order placed while the store used another currency.
+    await pool.query("UPDATE orders SET currency = 'USD' WHERE id = $1", [res.body.order.id]);
+    await buy(buyer.token, [{ productId, quantity: 1 }]);
+
+    const mine = await api.call('GET', '/orders/mine', { token: buyer.token });
+    expect(mine.body.orders.map((o: { currency: string }) => o.currency)).toEqual(['SGD', 'USD']);
+  });
+
   it('handles large orders without integer overflow', async () => {
     const buyer = await createUser();
     // $1,000,000 x 100 units = $100,000,000, beyond a 32-bit integer in cents.
@@ -256,7 +272,7 @@ describe('purchasing', () => {
     try {
       await client.query('BEGIN');
       const order = await client.query<{ id: number }>(
-        'INSERT INTO orders (user_id, total_cents) VALUES ($1, 1) RETURNING id', // wrong: should be 1000
+        "INSERT INTO orders (user_id, total_cents, currency) VALUES ($1, 1, 'SGD') RETURNING id", // wrong: should be 1000
         [buyer.id],
       );
       await client.query(
