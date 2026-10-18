@@ -23,7 +23,7 @@ describe('inventory ledger', () => {
       body: { sku: 'LEDGER-1', name: 'Lamp', priceCents: 1000, stock: 10 },
     });
     const id = created.body.product.id;
-    await api.call('POST', '/orders', { token: buyer.token, body: { productId: id, quantity: 3 } });
+    await api.call('POST', '/orders', { token: buyer.token, body: { items: [{ productId: id, quantity: 3 }] } });
     await api.call('POST', `/admin/products/${id}/stock-adjustments`, {
       token: admin.token,
       body: { delta: 5, note: 'Supplier delivery' },
@@ -50,7 +50,7 @@ describe('inventory ledger', () => {
     const buyer = await createUser();
     const productId = await createProduct(2);
 
-    await api.call('POST', '/orders', { token: buyer.token, body: { productId, quantity: 5 } });
+    await api.call('POST', '/orders', { token: buyer.token, body: { items: [{ productId, quantity: 5 }] } });
     await api.call('POST', `/admin/products/${productId}/stock-adjustments`, { token: admin.token, body: { delta: -5 } });
 
     const { rows } = await pool.query('SELECT reason FROM stock_movements WHERE product_id = $1', [productId]);

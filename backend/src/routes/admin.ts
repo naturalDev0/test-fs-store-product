@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import * as products from '../services/products.js';
 import * as ledger from '../services/ledger.js';
-import { listOrders } from '../services/purchase.js';
+import { findOrders } from '../services/purchase.js';
 import * as schema from './schemas.js';
 
 /** Every route here requires an authenticated admin. */
@@ -56,5 +56,5 @@ adminRouter.delete('/products/:id', async (req, res) => {
 });
 
 adminRouter.get('/orders', async (_req, res) => {
-  res.json({ orders: await listOrders({}) });
+  res.json({ orders: await findOrders({}) });
 });

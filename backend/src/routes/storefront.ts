@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { listProducts, getProduct } from '../services/products.js';
-import { listOrders, purchase } from '../services/purchase.js';
+import { findOrders, purchase } from '../services/purchase.js';
 import * as schema from './schemas.js';
 
 export const storefrontRouter = Router();
@@ -18,21 +18,23 @@ storefrontRouter.get('/products/:id', async (req, res) => {
 });
 
 /**
- * Buy a product. Customers only.
+ * Buy everything in the cart, all or nothing. Customers only.
+ *
+ * Body: { items: [{ productId, quantity }, ...] }
  *
  * Optional `Idempotency-Key` header: retrying with the same key returns the
  * original order (200) instead of buying twice.
  */
 storefrontRouter.post('/orders', requireAuth, requireRole('customer'), async (req, res) => {
-  const { productId, quantity } = schema.purchase.parse(req.body);
+  const { items } = schema.purchase.parse(req.body);
   const key = schema.idempotencyKey.parse(req.get('Idempotency-Key'));
 
-  const result = await purchase(req.user!.id, productId, quantity, key);
+  const result = await purchase(req.user!.id, items, key);
   res.status(result.replayed ? 200 : 201).json(result);
 });
 
 storefrontRouter.get('/orders/mine', requireAuth, async (req, res) => {
-  res.json({ orders: await listOrders({ userId: req.user!.id }) });
+  res.json({ orders: await findOrders({ userId: req.user!.id }) });
 });
 
 function toPublic(p: Awaited<ReturnType<typeof getProduct>>) {

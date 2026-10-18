@@ -65,7 +65,7 @@ describe('role-based access control', () => {
   it('only lets customers buy', async () => {
     const admin = await createUser('admin');
     const productId = await createProduct(5);
-    const res = await api.call('POST', '/orders', { token: admin.token, body: { productId, quantity: 1 } });
+    const res = await api.call('POST', '/orders', { token: admin.token, body: { items: [{ productId, quantity: 1 }] } });
     expect(res.status).toBe(403);
     expect(await stockOf(productId)).toBe(5);
   });
@@ -135,34 +135,138 @@ describe('admin product CRUD', () => {
 });
 
 describe('purchasing', () => {
-  it('snapshots the price at purchase time', async () => {
+  type Line = { productId: number; quantity: number };
+  const buy = (token: string, items: Line[], headers?: Record<string, string>) =>
+    api.call('POST', '/orders', { token, body: { items }, headers });
+
+  it('buys several products in one order, with line items and a total', async () => {
+    const buyer = await createUser();
+    const a = await createProduct(5, 1000);
+    const b = await createProduct(5, 250);
+
+    const res = await buy(buyer.token, [{ productId: b, quantity: 4 }, { productId: a, quantity: 2 }]);
+
+    expect(res.status).toBe(201);
+    expect(res.body.order).toMatchObject({
+      totalCents: 3000,
+      items: [
+        { productId: a, quantity: 2, unitPriceCents: 1000, lineTotalCents: 2000 },
+        { productId: b, quantity: 4, unitPriceCents: 250, lineTotalCents: 1000 },
+      ],
+    });
+    expect(await stockOf(a)).toBe(3);
+    expect(await stockOf(b)).toBe(1);
+  });
+
+  it('snapshots prices at purchase time', async () => {
     const admin = await createUser('admin');
     const buyer = await createUser();
     const productId = await createProduct(5, 1000);
 
-    await api.call('POST', '/orders', { token: buyer.token, body: { productId, quantity: 2 } });
+    await buy(buyer.token, [{ productId, quantity: 2 }]);
     const { version } = (await api.call('GET', `/admin/products/${productId}`, { token: admin.token })).body.product;
     await api.call('PATCH', `/admin/products/${productId}`, { token: admin.token, body: { version, priceCents: 5000 } });
 
     const mine = await api.call('GET', '/orders/mine', { token: buyer.token });
-    expect(mine.body.orders[0]).toMatchObject({ quantity: 2, unitPriceCents: 1000, totalCents: 2000 });
+    expect(mine.body.orders[0]).toMatchObject({
+      totalCents: 2000,
+      items: [{ quantity: 2, unitPriceCents: 1000, lineTotalCents: 2000 }],
+    });
   });
 
-  it('returns 409 with the available quantity when stock is insufficient', async () => {
+  it('buys nothing if any line is short, and says which lines', async () => {
     const buyer = await createUser();
-    const productId = await createProduct(2);
-    const res = await api.call('POST', '/orders', { token: buyer.token, body: { productId, quantity: 3 } });
+    const a = await createProduct(5);
+    const b = await createProduct(1);
+
+    const res = await buy(buyer.token, [{ productId: a, quantity: 2 }, { productId: b, quantity: 2 }]);
+
     expect(res.status).toBe(409);
-    expect(res.body.error.details).toEqual({ available: 2, requested: 3 });
+    expect(res.body.error.code).toBe('INSUFFICIENT_STOCK');
+    expect(res.body.error.details.items).toEqual([
+      { productId: b, name: 'Test product', requested: 2, available: 1 },
+    ]);
+    // The unit of A taken before B failed was given back.
+    expect(await stockOf(a)).toBe(5);
+    expect(await stockOf(b)).toBe(1);
+    expect((await api.call('GET', '/orders/mine', { token: buyer.token })).body.orders).toEqual([]);
   });
 
-  it('validates quantity', async () => {
+  it('rejects carts containing deactivated or unknown products', async () => {
+    const buyer = await createUser();
+    const a = await createProduct(10);
+    const b = await createProduct(10);
+    await pool.query('UPDATE products SET is_active = FALSE WHERE id = $1', [b]);
+
+    const res = await buy(buyer.token, [{ productId: a, quantity: 1 }, { productId: b, quantity: 1 }]);
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatchObject({ code: 'PRODUCT_UNAVAILABLE', details: { productIds: [b] } });
+    expect(await stockOf(a)).toBe(10);
+
+    const unknown = await buy(buyer.token, [{ productId: 999_999, quantity: 1 }]);
+    expect(unknown.body.error).toMatchObject({ code: 'PRODUCT_UNAVAILABLE', details: { productIds: [999_999] } });
+  });
+
+  it('handles large orders without integer overflow', async () => {
+    const buyer = await createUser();
+    // $1,000,000 x 100 units = $100,000,000, beyond a 32-bit integer in cents.
+    const productId = await createProduct(100, 100_000_000);
+    const res = await buy(buyer.token, [{ productId, quantity: 100 }]);
+    expect(res.status).toBe(201);
+    expect(res.body.order.totalCents).toBe(10_000_000_000);
+  });
+
+  it('rejects an idempotency key reused for a different cart', async () => {
+    const buyer = await createUser();
+    const productId = await createProduct(10);
+    const headers = { 'Idempotency-Key': 'checkout-attempt-0042' };
+
+    expect((await buy(buyer.token, [{ productId, quantity: 1 }], headers)).status).toBe(201);
+    const reused = await buy(buyer.token, [{ productId, quantity: 5 }], headers);
+
+    expect(reused.status).toBe(422);
+    expect(reused.body.error.code).toBe('IDEMPOTENCY_KEY_REUSED');
+    expect(await stockOf(productId)).toBe(9);
+  });
+
+  it('validates the cart', async () => {
     const buyer = await createUser();
     const productId = await createProduct(2);
-    for (const quantity of [0, -1, 1.5, 'two']) {
-      const res = await api.call('POST', '/orders', { token: buyer.token, body: { productId, quantity } });
+    const bad = [
+      [], // empty
+      [{ productId, quantity: 0 }],
+      [{ productId, quantity: -1 }],
+      [{ productId, quantity: 1.5 }],
+      [{ productId, quantity: 'two' }],
+      [{ productId, quantity: 1 }, { productId, quantity: 1 }], // duplicate product
+      Array.from({ length: 21 }, (_, i) => ({ productId: i + 1, quantity: 1 })), // too many lines
+    ];
+    for (const items of bad) {
+      const res = await api.call('POST', '/orders', { token: buyer.token, body: { items } });
       expect(res.status).toBe(400);
     }
     expect(await stockOf(productId)).toBe(2);
+  });
+
+  it('refuses, at the database level, an order whose total does not match its items', async () => {
+    const buyer = await createUser();
+    const productId = await createProduct(5, 1000);
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const order = await client.query<{ id: number }>(
+        'INSERT INTO orders (user_id, total_cents) VALUES ($1, 1) RETURNING id', // wrong: should be 1000
+        [buyer.id],
+      );
+      await client.query(
+        'INSERT INTO order_items (order_id, product_id, quantity, unit_price_cents, line_total_cents) VALUES ($1, $2, 1, 1000, 1000)',
+        [order.rows[0].id, productId],
+      );
+      // The check is deferred, so it fires at COMMIT.
+      await expect(client.query('COMMIT')).rejects.toThrow(/add up to 1000/);
+    } finally {
+      client.release();
+    }
   });
 });

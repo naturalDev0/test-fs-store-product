@@ -53,7 +53,7 @@ export async function stockOf(productId: number): Promise<number> {
 
 export async function unitsSold(productId: number): Promise<number> {
   const { rows } = await pool.query<{ sold: number }>(
-    'SELECT COALESCE(SUM(quantity), 0)::int AS sold FROM orders WHERE product_id = $1',
+    'SELECT COALESCE(SUM(quantity), 0)::int AS sold FROM order_items WHERE product_id = $1',
     [productId],
   );
   return rows[0].sold;

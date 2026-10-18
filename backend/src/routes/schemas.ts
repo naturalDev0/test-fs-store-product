@@ -39,9 +39,22 @@ export const stockAdjustment = z.object({
   note: z.string().trim().max(500).default(''),
 });
 
+export const MAX_CART_LINES = 20;
+
 export const purchase = z.object({
-  productId: z.number().int().positive(),
-  quantity: z.number().int().min(1).max(100),
+  items: z
+    .array(
+      z.object({
+        productId: z.number().int().positive(),
+        quantity: z.number().int().min(1).max(100),
+      }),
+    )
+    .min(1, 'The cart is empty')
+    .max(MAX_CART_LINES, `A cart can hold at most ${MAX_CART_LINES} different products`)
+    .refine(
+      (items) => new Set(items.map((i) => i.productId)).size === items.length,
+      'Each product may appear only once; combine the quantities instead',
+    ),
 });
 
 export const idempotencyKey = z.string().trim().min(8).max(128).optional();
