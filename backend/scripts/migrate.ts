@@ -1,4 +1,5 @@
 import { readdir, readFile } from 'node:fs/promises';
+import { pathToFileURL } from 'node:url';
 import type pg from 'pg';
 
 const MIGRATIONS_DIR = new URL('../db/migrations/', import.meta.url);
@@ -52,7 +53,8 @@ export async function runMigrations(client: pg.ClientBase, log: (msg: string) =>
 }
 
 // When run directly: `npm run db:migrate`
-if (import.meta.url === `file://${process.argv[1]}`) {
+// pathToFileURL makes the comparison work on Windows too (drive letters, backslashes, spaces).
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const { pool } = await import('../src/db.js');
   const client = await pool.connect();
   try {
