@@ -10,9 +10,7 @@ export default function OrdersTable({ orders, showCustomer = false }: { orders: 
             <th>Order</th>
             <th>Date</th>
             {showCustomer && <th>Customer</th>}
-            <th>Product</th>
-            <th className="num">Qty</th>
-            <th className="num">Unit price</th>
+            <th>Items</th>
             <th className="num">Total</th>
           </tr>
         </thead>
@@ -22,10 +20,23 @@ export default function OrdersTable({ orders, showCustomer = false }: { orders: 
               <td>#{o.id}</td>
               <td>{new Date(o.createdAt).toLocaleString()}</td>
               {showCustomer && <td>{o.userEmail}</td>}
-              <td>{o.productName}</td>
-              <td className="num">{o.quantity}</td>
-              <td className="num">{formatPrice(o.unitPriceCents)}</td>
-              <td className="num">{formatPrice(o.totalCents)}</td>
+              <td>
+                <ul className="line-items">
+                  {o.items.map((i) => (
+                    <li key={i.productId}>
+                      <span>
+                        {i.quantity} × {i.productName}
+                      </span>
+                      <span className="muted small">
+                        {formatPrice(i.unitPriceCents)} each · {formatPrice(i.lineTotalCents)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </td>
+              <td className="num">
+                <strong>{formatPrice(o.totalCents)}</strong>
+              </td>
             </tr>
           ))}
         </tbody>

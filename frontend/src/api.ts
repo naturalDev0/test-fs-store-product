@@ -18,16 +18,43 @@ export interface Product {
   version?: number
 }
 
-export interface Order {
-  id: number
+export interface OrderItem {
   productId: number
   productName: string
   quantity: number
   unitPriceCents: number
-  totalCents: number
+  lineTotalCents: number
+}
+
+export interface Order {
+  id: number
+  userEmail: string
   status: string
+  totalCents: number
   createdAt: string
-  userEmail?: string
+  items: OrderItem[]
+}
+
+export interface CartLine {
+  productId: number
+  quantity: number
+}
+
+export interface StockMovement {
+  id: number
+  delta: number
+  reason: 'opening_balance' | 'purchase' | 'restock' | 'write_off'
+  stockAfter: number
+  orderId: number | null
+  actorEmail: string | null
+  note: string
+  createdAt: string
+}
+
+export interface Reconciliation {
+  balanced: boolean
+  productsChecked: number
+  mismatches: { productId: number; sku: string; stock: number; ledgerStock: number }[]
 }
 
 export class ApiError extends Error {
@@ -79,8 +106,8 @@ export const api = {
   me: () => request<{ user: User }>('GET', '/auth/me'),
 
   products: () => request<{ products: Product[] }>('GET', '/products'),
-  buy: (productId: number, quantity: number, idempotencyKey: string) =>
-    request<{ order: Order; replayed: boolean }>('POST', '/orders', { productId, quantity }, {
+  checkout: (items: CartLine[], idempotencyKey: string) =>
+    request<{ order: Order; replayed: boolean }>('POST', '/orders', { items }, {
       'Idempotency-Key': idempotencyKey,
     }),
   myOrders: () => request<{ orders: Order[] }>('GET', '/orders/mine'),
@@ -91,10 +118,12 @@ export const api = {
       request<{ product: Product }>('POST', '/admin/products', p),
     update: (id: number, edit: { version: number; name?: string; description?: string; priceCents?: number; isActive?: boolean }) =>
       request<{ product: Product }>('PATCH', `/admin/products/${id}`, edit),
-    adjustStock: (id: number, delta: number) =>
-      request<{ product: Product }>('POST', `/admin/products/${id}/stock-adjustments`, { delta }),
+    adjustStock: (id: number, delta: number, note: string) =>
+      request<{ product: Product }>('POST', `/admin/products/${id}/stock-adjustments`, { delta, note }),
     deactivate: (id: number) => request<void>('DELETE', `/admin/products/${id}`),
     orders: () => request<{ orders: Order[] }>('GET', '/admin/orders'),
+    movements: (id: number) => request<{ movements: StockMovement[] }>('GET', `/admin/products/${id}/stock-movements`),
+    reconciliation: () => request<Reconciliation>('GET', '/admin/inventory/reconciliation'),
   },
 }
 

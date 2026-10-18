@@ -112,7 +112,7 @@ tr.inactive td { opacity: 0.55; }
 tr.editing td { background: color-mix(in srgb, var(--accent) 6%, transparent); }
 tr.editing input + input { margin-top: 0.35rem; }
 .truncate { max-width: 260px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.actions { display: flex; gap: 0.4rem; justify-content: flex-end; }
+.actions { display: flex; gap: 0.4rem; justify-content: flex-end; flex-wrap: nowrap; }
 .actions button, .adjuster button { padding: 0.3rem 0.65rem; }
 .adjuster { display: flex; gap: 0.3rem; align-items: center; }
 .pill { font-size: 0.75rem; font-weight: 600; padding: 0.1rem 0.5rem; border-radius: 999px; }
@@ -124,3 +124,36 @@ tr.editing input + input { margin-top: 0.35rem; }
 .create-form .notice { margin: 0; }
 
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Cart */
+.shop-layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 1rem; align-items: start; }
+/* On narrow screens the cart comes first, so checkout is never a long scroll away. */
+@media (max-width: 820px) { .shop-layout { grid-template-columns: minmax(0, 1fr); } .shop-layout .cart { order: -1; position: static; } }
+.cart { position: sticky; top: 1rem; display: grid; gap: 0.75rem; }
+.cart h2 { margin: 0; }
+.cart-lines { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.75rem; }
+.cart-lines li { display: flex; justify-content: space-between; gap: 0.75rem; align-items: flex-start; }
+.cart-qty { display: grid; gap: 0.2rem; justify-items: end; }
+.cart-qty input { width: 4.25rem; padding: 0.3rem 0.45rem; }
+.cart-qty .link-button { font-size: 0.8rem; }
+.cart-total { display: flex; justify-content: space-between; border-top: 1px solid var(--border); padding-top: 0.75rem; }
+.cart .checkout { width: 100%; }
+.cart p { margin: 0; }
+.cart .notice { margin: 0; font-size: 0.9rem; }
+.notice ul { margin: 0.4rem 0 0; padding-left: 1.2rem; }
+
+/* Orders */
+.line-items { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.2rem; }
+.line-items li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 1rem; }
+
+/* Admin: stock history and ledger */
+.adjuster { display: grid; gap: 0.3rem; }
+.adjuster-row { display: flex; gap: 0.3rem; align-items: center; }
+.adjuster .note { font-size: 0.85rem; padding: 0.3rem 0.5rem; }
+.pill.bad { background: var(--error-bg); color: var(--error-text); }
+.recon { margin-left: 0.6rem; }
+tr.history-row > td { background: color-mix(in srgb, var(--border) 25%, transparent); padding: 0.75rem 1rem 1rem; }
+.history h3 { font-size: 0.9rem; margin: 0 0 0.5rem; }
+.history table { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); font-size: 0.85rem; }
+.delta-up { color: var(--success-text); font-weight: 600; }
+.delta-down { color: var(--danger); font-weight: 600; }
