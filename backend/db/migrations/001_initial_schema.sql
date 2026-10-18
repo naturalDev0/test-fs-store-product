@@ -1,5 +1,7 @@
--- Product Store schema (PostgreSQL 14+).
--- Idempotent: safe to run more than once.
+-- 001: initial schema (PostgreSQL 14+).
+--
+-- Written idempotently (IF NOT EXISTS) so it also applies cleanly to
+-- databases created before the migration runner existed.
 --
 -- Design rule: invariants that protect money and stock live in the database
 -- (CHECK, UNIQUE, FOREIGN KEY), not only in application code. If a bug ever

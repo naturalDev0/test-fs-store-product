@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs';
 import { pool } from '../src/db.js';
-import { migrate } from './migrate.js';
+import { runMigrations } from './migrate.js';
 
 const adminEmail = process.env.SEED_ADMIN_EMAIL ?? 'admin@example.com';
 const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? 'Admin123!';
@@ -17,7 +17,12 @@ const products = [
 ];
 
 async function seed() {
-  await migrate();
+  const client = await pool.connect();
+  try {
+    await runMigrations(client, console.log);
+  } finally {
+    client.release();
+  }
 
   for (const [email, password, role] of [
     [adminEmail, adminPassword, 'admin'],
